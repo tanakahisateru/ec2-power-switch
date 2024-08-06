@@ -61,6 +61,8 @@ def get_ec2_instance_states(config: OrderedDict[str, EC2InstanceConfig]) -> Orde
         '--output', 'json'
     ]
     result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(result.stderr)
     out = json.loads(result.stdout)
 
     instances = OrderedDict()
