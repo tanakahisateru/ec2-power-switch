@@ -104,7 +104,7 @@ def start_ec2_instance(instance: EC2InstanceStatus):
         '--instance-ids', instance.config.id,
         '--query', "StartingInstances[*].[InstanceId, CurrentState.Name]",
         '--output', 'json'
-    ], instance)
+    ])
     burst_status_watching()
 
 
@@ -114,7 +114,7 @@ def stop_ec2_instance(instance: EC2InstanceStatus):
         '--instance-ids', instance.config.id,
         '--query', "StoppingInstances[*].[InstanceId, CurrentState.Name]",
         '--output', 'json'
-    ], instance)
+    ])
     burst_status_watching()
 
 
