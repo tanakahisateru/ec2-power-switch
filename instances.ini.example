@@ -1,0 +1,9 @@
+[DEFAULT]
+user = ubuntu
+directory = /home/ubuntu/environment
+
+[your-instance-1]
+id = i-11111111111111111
+
+[your-instance-2]
+id = i-22222222222222222
