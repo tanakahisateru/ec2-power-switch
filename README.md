@@ -1,5 +1,7 @@
 # EC2 Power Switch
 
+![screenshot](images/ui.png)
+
 ## できること
 
 - EC2 インスタンスのステータス表示
