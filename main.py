@@ -124,8 +124,10 @@ def format_elapsed_time(t: timedelta | None) -> str:
     return f"{int(hours)}:{int(minutes):02}"
 
 
-def update_treeview(config, states, tree):
+def update_treeview(config, states, tree, lock):
     new_states = get_ec2_instance_states(config)
+
+    lock.acquire()
     states.clear()
     for item in tree.get_children():
         tree.delete(item)
@@ -138,20 +140,20 @@ def update_treeview(config, states, tree):
             instance.public_ip if instance.public_ip else '',
             format_elapsed_time(instance.elapsed_time)
         ))
-
+    lock.release()
 
 continue_watching = True
 status_watching_burst = 0
 
-def status_watching_worker(config, states, tree):
-    update_treeview(config, states, tree)
+def status_watching_worker(config, states, tree, lock):
+    update_treeview(config, states, tree, lock)
     global status_watching_burst
     tick = 0
     while continue_watching:
         interval = 60 if status_watching_burst <= 0 else 6
         tick += 1
         if tick % interval == 0:
-            update_treeview(config, states, tree)
+            update_treeview(config, states, tree, lock)
             status_watching_burst -= 1 if status_watching_burst > 0 else 0
         time.sleep(1)
 
@@ -171,8 +173,12 @@ if __name__ == "__main__":
     tree.heading(5, text="経過時間")
     tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+    lock = threading.Lock()
     def selected_instance_state():
-        return ec2_states[tree.item(tree.selection()[0], 'values')[0]]
+        lock.acquire()
+        s = ec2_states[tree.item(tree.selection()[0], 'values')[0]]
+        lock.release()
+        return s
 
     menu = tk.Menu(root, tearoff=0)
     menu.add_command(label="起動", command=lambda: start_ec2_instance(selected_instance_state()))
@@ -202,8 +208,8 @@ if __name__ == "__main__":
     ec2_configs = get_ec2_instance_configs('instances.ini')
     ec2_states = OrderedDict()
 
-    # update_treeview(ec2_configs, ec2_states, tree)
-    thread = threading.Thread(target=status_watching_worker, args=(ec2_configs, ec2_states, tree))
+    # update_treeview(ec2_configs, ec2_states, tree, lock)
+    thread = threading.Thread(target=status_watching_worker, args=(ec2_configs, ec2_states, tree, lock))
     thread.start()
 
     root.mainloop()
