@@ -67,6 +67,7 @@ python3 main.py --config /path/to/instances.ini
 
 - public_ip を持っていること
 - セキュリティグループが 22 番ポートを通すように設定されていること
+- EC2 インスタンスの authorized_keys に自分のデフォルトキーが登録されていること
 
 起動のたびに public_ip が変わると、SSH と VSCode は、いちいち初めてのホストだと認識します。
 Elastic IP を確保して割り当てておくのがおすすめです。
