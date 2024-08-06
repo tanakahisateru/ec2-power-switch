@@ -49,7 +49,14 @@ user = another-user
 python3 main.py
 ```
 
-コンテキストメニューから各種の操作が可能です。
+instances.ini をカレントディレクトリに置けない場合は、ファイルパスを引数に指定してください。
+
+```bash
+python3 main.py --config /path/to/instances.ini
+```
+
+インスタンス ID が適切に設定されていれば、ウィンドウに各インスタンスの状態が表示され、
+コンテキストメニューから各種の操作が可能になります。
 
 ## 備考
 
