@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 import configparser
+from dataclasses import dataclass
 import os
 import subprocess
 import json
@@ -10,7 +11,6 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
-from attr import dataclass
 
 @dataclass
 class EC2InstanceConfig:
@@ -30,12 +30,15 @@ class EC2InstanceStatus:
     elapsed_time: timedelta | None
 
 
-def get_ec2_instance_configs(ini_path) -> OrderedDict[str, EC2InstanceConfig]:
+EC2InstanceConfigCollection = OrderedDict[str, EC2InstanceConfig]
+EC2InstanceStatusCollection = OrderedDict[str, EC2InstanceStatus]
+
+def get_ec2_instance_configs(ini_path) -> EC2InstanceConfigCollection:
     if not os.path.exists(ini_path):
         raise FileNotFoundError(f"{ini_path} not found")
 
     ini = configparser.ConfigParser()
-    instances = OrderedDict()
+    instances: EC2InstanceConfigCollection = OrderedDict()
     with open(ini_path) as f:
         ini.read_file(f)
         for section_name in ini.sections():
@@ -52,7 +55,7 @@ def get_ec2_instance_configs(ini_path) -> OrderedDict[str, EC2InstanceConfig]:
     return instances
 
 
-def get_ec2_instance_states(config: OrderedDict[str, EC2InstanceConfig]) -> OrderedDict[str, EC2InstanceStatus]:
+def get_ec2_instance_states(config: EC2InstanceConfigCollection) -> EC2InstanceStatusCollection:
     instance_ids = config.keys()
     command = [
         'aws', 'ec2', 'describe-instances',
@@ -65,7 +68,7 @@ def get_ec2_instance_states(config: OrderedDict[str, EC2InstanceConfig]) -> Orde
         raise Exception(result.stderr)
     out = json.loads(result.stdout)
 
-    instances = OrderedDict()
+    instances: EC2InstanceStatusCollection = OrderedDict()
     current_time = datetime.now(timezone.utc)
     for reservation in out:
         for items in reservation:
@@ -106,15 +109,12 @@ def stop_ec2_instance(instance: EC2InstanceStatus):
 
 
 def open_vscode_remote_ssh(instance: EC2InstanceStatus):
-    user = instance.config.user
-    host = instance.public_ip
-    dir = instance.config.directory
     command = [
         'code', '--new-window', '--remote',
         f'ssh-remote+{instance.config.user}@{instance.public_ip}'
     ]
-    if dir:
-        command.append(dir)
+    if instance.config.directory:
+        command.append(instance.config.directory)
     subprocess.run(command)
 
 
@@ -126,41 +126,56 @@ def format_elapsed_time(t: timedelta | None) -> str:
     return f"{int(hours)}:{int(minutes):02}"
 
 
-def update_treeview(config, states, tree, lock):
-    new_states = get_ec2_instance_states(config)
+def init_treeview(tree: ttk.Treeview, config: EC2InstanceConfigCollection):
+    for instance in config.values():
+        tree.insert('', 'end', instance.id, values=(
+            instance.id,
+            instance.display_name,
+            '',
+            '',
+            ''
+        ))
 
-    lock.acquire()
-    states.clear()
-    for item in tree.get_children():
-        tree.delete(item)
+def update_treeview(
+    config: EC2InstanceConfigCollection,
+    states: EC2InstanceStatusCollection,
+    tree: ttk.Treeview
+):
+    new_states = get_ec2_instance_states(config)
     for instance in new_states.values():
         states[instance.id] = instance
-        tree.insert("", "end", values=(
+        tree.item(instance.id, values=(
             instance.id,
             instance.name,
             instance.state,
             instance.public_ip if instance.public_ip else '',
             format_elapsed_time(instance.elapsed_time)
         ))
-    lock.release()
 
 continue_watching = True
 status_watching_burst = 0
 
-def status_watching_worker(config, states, tree, lock):
-    update_treeview(config, states, tree, lock)
+def status_watching_worker(
+    config: EC2InstanceConfigCollection,
+    states: EC2InstanceStatusCollection,
+    tree: ttk.Treeview
+):
+    update_treeview(config, states, tree)
     global status_watching_burst
     tick = 0
     while continue_watching:
         interval = 60 if status_watching_burst <= 0 else 6
         tick += 1
         if tick % interval == 0:
-            update_treeview(config, states, tree, lock)
+            update_treeview(config, states, tree)
             status_watching_burst -= 1 if status_watching_burst > 0 else 0
         time.sleep(1)
 
 
 if __name__ == "__main__":
+    ec2_configs = get_ec2_instance_configs('instances.ini')
+    ec2_states = OrderedDict()
+
     root = tk.Tk()
     root.title("EC2 Power Switch")
 
@@ -173,19 +188,27 @@ if __name__ == "__main__":
     tree.heading(3, text="状態")
     tree.heading(4, text="IPアドレス")
     tree.heading(5, text="経過時間")
+    init_treeview(tree, ec2_configs)
     tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    lock = threading.Lock()
     def selected_instance_state():
-        lock.acquire()
-        s = ec2_states[tree.item(tree.selection()[0], 'values')[0]]
-        lock.release()
+        sel = tree.selection()
+        if not sel:
+            return None
+        s = ec2_states[tree.item(sel[0], 'values')[0]]
         return s
 
+    def do_with_selected_instance(func):
+        def wrapper():
+            s = selected_instance_state()
+            if s:
+                func(s)
+        return wrapper
+
     menu = tk.Menu(root, tearoff=0)
-    menu.add_command(label="起動", command=lambda: start_ec2_instance(selected_instance_state()))
-    menu.add_command(label="停止", command=lambda: stop_ec2_instance(selected_instance_state()))
-    menu.add_command(label="VSCode Remote SSH", command=lambda: open_vscode_remote_ssh(selected_instance_state()))
+    menu.add_command(label="起動", command=do_with_selected_instance(start_ec2_instance))
+    menu.add_command(label="停止", command=do_with_selected_instance(stop_ec2_instance))
+    menu.add_command(label="VSCode Remote SSH", command=do_with_selected_instance(open_vscode_remote_ssh))
     menu.add_separator()
     menu.add_command(label="更新", command=lambda: update_treeview(ec2_configs, ec2_states, tree))
 
@@ -207,11 +230,11 @@ if __name__ == "__main__":
 
     tree.bind("<Button-2>", show_menu)
 
-    ec2_configs = get_ec2_instance_configs('instances.ini')
-    ec2_states = OrderedDict()
-
     # update_treeview(ec2_configs, ec2_states, tree, lock)
-    thread = threading.Thread(target=status_watching_worker, args=(ec2_configs, ec2_states, tree, lock))
+    thread = threading.Thread(
+        target=status_watching_worker,
+        args=(ec2_configs, ec2_states, tree)
+    )
     thread.start()
 
     root.mainloop()
