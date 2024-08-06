@@ -1,5 +1,8 @@
 # EC2 Power Switch
 
+AWS EC2 インスタンスを直接使った開発を支援するツールです。つまり Cloud9 の代替です。
+ブラウザ内エディタの代わりに、VSCode のリモート SSH 接続を使います。
+
 ![screenshot](images/ui.png)
 
 ## できること
@@ -67,3 +70,5 @@ python3 main.py --config /path/to/instances.ini
 
 起動のたびに public_ip が変わると、SSH と VSCode は、いちいち初めてのホストだと認識します。
 Elastic IP を確保して割り当てておくのがおすすめです。
+
+Cloud9 のような自動停止は行いません。起動からの経過時間に注意してください。
