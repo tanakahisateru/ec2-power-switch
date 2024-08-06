@@ -6,6 +6,8 @@ import os
 import subprocess
 import json
 from datetime import datetime, timedelta, timezone
+import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 from attr import dataclass
@@ -87,6 +89,8 @@ def start_ec2_instance(instance: EC2InstanceStatus):
         '--instance-ids', instance.config.id
     ]
     subprocess.run(command)
+    global status_watching_burst
+    status_watching_burst = 10
 
 
 def stop_ec2_instance(instance: EC2InstanceStatus):
@@ -95,6 +99,8 @@ def stop_ec2_instance(instance: EC2InstanceStatus):
         '--instance-ids', instance.config.id
     ]
     subprocess.run(command)
+    global status_watching_burst
+    status_watching_burst = 10
 
 
 def open_vscode_remote_ssh(instance: EC2InstanceStatus):
@@ -119,10 +125,11 @@ def format_elapsed_time(t: timedelta | None) -> str:
 
 
 def update_treeview(config, states, tree):
+    new_states = get_ec2_instance_states(config)
     states.clear()
     for item in tree.get_children():
         tree.delete(item)
-    for instance in get_ec2_instance_states(config).values():
+    for instance in new_states.values():
         states[instance.id] = instance
         tree.insert("", "end", values=(
             instance.id,
@@ -131,6 +138,22 @@ def update_treeview(config, states, tree):
             instance.public_ip if instance.public_ip else '',
             format_elapsed_time(instance.elapsed_time)
         ))
+
+
+continue_watching = True
+status_watching_burst = 0
+
+def status_watching_worker(config, states, tree):
+    update_treeview(config, states, tree)
+    global status_watching_burst
+    tick = 0
+    while continue_watching:
+        interval = 60 if status_watching_burst <= 0 else 6
+        tick += 1
+        if tick % interval == 0:
+            update_treeview(config, states, tree)
+            status_watching_burst -= 1 if status_watching_burst > 0 else 0
+        time.sleep(1)
 
 
 if __name__ == "__main__":
@@ -168,6 +191,12 @@ if __name__ == "__main__":
 
     ec2_configs = get_ec2_instance_configs('instances.ini')
     ec2_states = OrderedDict()
-    update_treeview(ec2_configs, ec2_states, tree)
+
+    # update_treeview(ec2_configs, ec2_states, tree)
+    thread = threading.Thread(target=status_watching_worker, args=(ec2_configs, ec2_states, tree))
+    thread.start()
 
     root.mainloop()
+
+    continue_watching = False
+    thread.join()
