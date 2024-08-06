@@ -185,6 +185,16 @@ if __name__ == "__main__":
         item = tree.identify_row(e.y)
         if item:
             tree.selection_set(item)
+            s = selected_instance_state()
+            if s.state == 'running':
+                menu.entryconfig(0, state=tk.DISABLED)
+                menu.entryconfig(1, state=tk.NORMAL)
+                menu.entryconfig(2, state=tk.NORMAL if s.public_ip else tk.DISABLED)
+            else:
+                menu.entryconfig(0, state=tk.NORMAL)
+                menu.entryconfig(1, state=tk.DISABLED)
+                menu.entryconfig(2, state=tk.DISABLED)
+
             menu.post(e.x_root, e.y_root)
 
     tree.bind("<Button-2>", show_menu)
